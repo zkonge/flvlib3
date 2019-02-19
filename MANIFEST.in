@@ -1,0 +1,3 @@
+include fix-rpm-compressing-files LICENSE MANIFEST.in
+graft man
+recursive-include tests *.py
