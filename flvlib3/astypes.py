@@ -1,6 +1,7 @@
 """
 The AS types and their FLV representations.
 """
+from typing import BinaryIO, AnyStr, Any, List, Tuple, Dict
 import os
 import calendar
 import datetime
@@ -38,26 +39,26 @@ class MalformedFLV(Exception):
 
 
 # Number
-def get_number(stream, max_offset=None):
+def get_number(stream: BinaryIO, max_offset: int = None) -> float:
     return get_double(stream)
 
 
-def make_number(number):
+def make_number(number: float) -> bytes:
     return make_double(number)
 
 
 # Boolean
-def get_boolean(stream, max_offset=None):
+def get_boolean(stream: BinaryIO, max_offset: int = None) -> bool:
     value = get_ui8(stream)
     return bool(value)
 
 
-def make_boolean(value):
+def make_boolean(value: bool) -> bytes:
     return make_ui8(bool(value))
 
 
 # String
-def get_string(stream, max_offset=None):
+def get_string(stream: BinaryIO, max_offset: int = None) -> bytes:
     # First 16 bits are the string's length
     length = get_ui16(stream)
     # Then comes the string itself
@@ -65,7 +66,7 @@ def get_string(stream, max_offset=None):
     return ret
 
 
-def make_string(string):
+def make_string(string: AnyStr) -> bytes:
     if isinstance(string, str):
         # We need a blob, not unicode.
         string = string.encode()
@@ -74,7 +75,7 @@ def make_string(string):
 
 
 # Long String
-def get_long_string(stream, max_offset=None):
+def get_long_string(stream: BinaryIO, max_offset: int = None) -> bytes:
     # First 32 bits are the string's length
     length = get_ui32(stream)
     # Then comes the string itself
@@ -82,7 +83,7 @@ def get_long_string(stream, max_offset=None):
     return ret
 
 
-def make_long_string(string):
+def make_long_string(string: AnyStr) -> bytes:
     if isinstance(string, str):
         # We need a blob, not unicode.
         string = string.encode()
@@ -95,7 +96,7 @@ class ECMAArray(dict):
     ...
 
 
-def get_ecma_array(stream, max_offset=None):
+def get_ecma_array(stream: BinaryIO, max_offset=None) -> ECMAArray:
     length = get_ui32(stream)
     logger.debug('The ECMA array has approximately %d elements', length)
     array = ECMAArray()
@@ -114,7 +115,7 @@ def get_ecma_array(stream, max_offset=None):
     return array
 
 
-def make_ecma_array(d):
+def make_ecma_array(d: Dict[AnyStr, Any]) -> bytes:
     length = make_ui32(len(d))
     rest = b''.join(make_script_data_variable(name, value) for name, value in d.items())
     marker = make_ui24(9)
@@ -122,21 +123,21 @@ def make_ecma_array(d):
 
 
 # Strict array
-def get_strict_array(stream, max_offset=None):
+def get_strict_array(stream: BinaryIO, max_offset: bool = None) -> List[Any]:
     length = get_ui32(stream)
     logger.debug('Strict array length = %d', length)
     elements = [get_script_data_value(stream, max_offset=max_offset) for _ in range(length)]
     return elements
 
 
-def make_strict_array(array):
+def make_strict_array(array: List[Any]) -> bytes:
     length = make_ui32(len(array))
     rest = b''.join(make_script_data_value(value) for value in array)
     return length + rest
 
 
 # Date
-def get_date(stream, max_offset=None):
+def get_date(stream: BinaryIO, max_offset: bool = None) -> datetime.datetime:
     timestamp = get_number(stream) / 1000
     # From the following document:
     #   http://opensource.adobe.com/wiki/download/
@@ -150,7 +151,7 @@ def get_date(stream, max_offset=None):
     return datetime.datetime.fromtimestamp(timestamp, utc)
 
 
-def make_date(date):
+def make_date(date: datetime.datetime) -> bytes:
     if date.tzinfo:
         utc_date = date.astimezone(utc)
     else:
@@ -162,11 +163,11 @@ def make_date(date):
 
 
 # Null
-def get_null(stream, max_offset=None):
+def get_null(stream: BinaryIO, max_offset: bool = None) -> None:
     return None
 
 
-def make_null(stream):
+def make_null(stream: BinaryIO) -> bytes:
     return b''
 
 
@@ -175,7 +176,7 @@ class FLVObject(dict):
     ...
 
 
-def get_object(stream, max_offset=None):
+def get_object(stream: BinaryIO, max_offset: bool = None) -> FLVObject:
     ret = FLVObject()
     while True:
         if max_offset and (stream.tell() == max_offset):
@@ -192,7 +193,7 @@ def get_object(stream, max_offset=None):
     return ret
 
 
-def make_object(obj):
+def make_object(obj: FLVObject) -> bytes:
     # If the object is iterable, serialize keys/values. If not, fall back on iterating over __dict__.
     # This makes sure that make_object(get_object(StringIO(blob))) == blob
     try:
@@ -206,7 +207,9 @@ def make_object(obj):
 
 # Movie clip
 class MovieClip:
-    def __init__(self, path):
+    path: bytes
+
+    def __init__(self, path: bytes):
         self.path = path
 
     def __eq__(self, other):
@@ -216,12 +219,12 @@ class MovieClip:
         return '<MovieClip at %s>' % self.path
 
 
-def get_movie_clip(stream, max_offset=None):
+def get_movie_clip(stream: BinaryIO, max_offset: bool = None) -> MovieClip:
     ret = get_string(stream)
     return MovieClip(ret)
 
 
-def make_movie_clip(clip):
+def make_movie_clip(clip: MovieClip) -> bytes:
     return make_string(clip.path)
 
 
@@ -235,18 +238,19 @@ class Undefined:
         return '<Undefined>'
 
 
-def get_undefined(stream, max_offset=None):
+def get_undefined(stream: BinaryIO, max_offset: bool = None) -> Undefined:
     return Undefined()
 
 
-def make_undefined(stream):
+def make_undefined(stream: BinaryIO) -> bytes:
     return b''
 
 
 # Reference
 class Reference:
+    ref: int
 
-    def __init__(self, ref):
+    def __init__(self, ref: int):
         self.ref = ref
 
     def __eq__(self, other):
@@ -256,12 +260,12 @@ class Reference:
         return '<Reference to %d>' % self.ref
 
 
-def get_reference(stream, max_offset=None):
+def get_reference(stream: BinaryIO, max_offset: bool = None) -> Reference:
     ret = get_ui16(stream)
     return Reference(ret)
 
 
-def make_reference(reference):
+def make_reference(reference: Reference) -> bytes:
     return make_ui16(reference.ref)
 
 
@@ -301,7 +305,7 @@ type_to_as_type = {
 
 
 # Script Data Variable
-def get_script_data_variable(stream, max_offset=None):
+def get_script_data_variable(stream: BinaryIO, max_offset: bool = None) -> Tuple[AnyStr, Any]:
     name = get_string(stream)
     logger.debug('Script data name = %s', name)
     value = get_script_data_value(stream, max_offset=max_offset)
@@ -309,7 +313,7 @@ def get_script_data_variable(stream, max_offset=None):
     return name, value
 
 
-def make_script_data_variable(name, value):
+def make_script_data_variable(name: AnyStr, value: AnyStr) -> bytes:
     logger.debug('Script data name = %s', name)
     logger.debug('Script data value = %r', value)
     ret = make_string(name) + make_script_data_value(value)
@@ -317,7 +321,7 @@ def make_script_data_variable(name, value):
 
 
 # Script Data Value
-def get_script_data_value(stream, max_offset=None):
+def get_script_data_value(stream: BinaryIO, max_offset: bool = None) -> Any:
     value_type = get_ui8(stream)
     logger.debug('Script data value type = %r', value_type)
     try:
@@ -329,7 +333,7 @@ def get_script_data_value(stream, max_offset=None):
     return value
 
 
-def make_script_data_value(value):
+def make_script_data_value(value: Any) -> bytes:
     value_type = type_to_as_type.get(type(value), VALUE_TYPE_OBJECT)
     logger.debug('Script data value type = %r', value_type)
     #  KeyError can't happen here, because we always fall back on

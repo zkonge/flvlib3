@@ -1,3 +1,4 @@
+from typing import Optional, TypeVar, BinaryIO, Iterator, Type, Union, AnyStr, Any
 import os
 import logging
 from struct import pack, unpack
@@ -17,7 +18,7 @@ log = logging.getLogger('flvlib3.tags')
 STRICT_PARSING = False
 
 
-def strict_parser(switch=None):
+def strict_parser(switch: Optional[bool] = None) -> bool:
     global STRICT_PARSING
     if switch is not None:
         STRICT_PARSING = switch
@@ -28,7 +29,10 @@ class EndOfTags(Exception):
     ...
 
 
-def ensure(value, expected, error_msg):
+T = TypeVar('T')
+
+
+def ensure(value: T, expected: T, error_msg: str) -> None:
     if value == expected:
         return
 
@@ -40,14 +44,14 @@ def ensure(value, expected, error_msg):
 
 class Tag:
 
-    def __init__(self, parent_flv, stream):
+    def __init__(self, parent_flv: 'FLV', stream: BinaryIO):
         self.stream = stream
         self.parent_flv = parent_flv
         self.offset = None
         self.size = None
         self.timestamp = None
 
-    def parse(self):
+    def parse(self) -> None:
         stream = self.stream
 
         self.offset = stream.tell() - 1
@@ -78,14 +82,14 @@ class Tag:
              self.size + 11, self.size + 11)
         )
 
-    def parse_tag_content(self):
+    def parse_tag_content(self) -> None:
         # By default just seek past the tag content
         self.stream.seek(self.size, os.SEEK_CUR)
 
 
 class AudioTag(Tag):
 
-    def __init__(self, parent_flv, stream):
+    def __init__(self, parent_flv: 'FLV', stream: BinaryIO):
         super().__init__(parent_flv, stream)
         self.sound_format = None
         self.sound_rate = None
@@ -93,7 +97,7 @@ class AudioTag(Tag):
         self.sound_type = None
         self.aac_packet_type = None  # always None for non-AAC tags
 
-    def parse_tag_content(self):
+    def parse_tag_content(self) -> None:
         stream = self.stream
 
         sound_flags = get_ui8(stream)
@@ -147,13 +151,13 @@ class AudioTag(Tag):
 
 class VideoTag(Tag):
 
-    def __init__(self, parent_flv, stream):
+    def __init__(self, parent_flv: 'FLV', stream: BinaryIO):
         super().__init__(parent_flv, stream)
         self.frame_type = None
         self.codec_id = None
         self.h264_packet_type = None  # Always None for non-H.264 tags
 
-    def parse_tag_content(self):
+    def parse_tag_content(self) -> None:
         stream = self.stream
 
         video_flags = get_ui8(stream)
@@ -204,12 +208,12 @@ class VideoTag(Tag):
 
 class ScriptTag(Tag):
 
-    def __init__(self, parent_flv, stream):
+    def __init__(self, parent_flv: 'FLV', stream: BinaryIO):
         super().__init__(parent_flv, stream)
         self.name = None
         self.variable = None
 
-    def parse_tag_content(self):
+    def parse_tag_content(self) -> None:
         stream = self.stream
 
         # Here there's always a byte with the value of 0x02,
@@ -262,14 +266,14 @@ tag_to_class = {
 
 class FLV:
 
-    def __init__(self, stream):
+    def __init__(self, stream: BinaryIO):
         self.stream = stream
         self.version = None
         self.has_audio = None
         self.has_video = None
         self.tags = []
 
-    def parse_header(self):
+    def parse_header(self) -> None:
         stream = self.stream
         stream.seek(0)
 
@@ -310,7 +314,7 @@ class FLV:
         tag_0_size = get_ui32(stream)
         ensure(tag_0_size, 0, 'PreviousTagSize0 non zero: 0x%08X' % tag_0_size)
 
-    def iter_tags(self):
+    def iter_tags(self) -> Iterator[Tag]:
         self.parse_header()
         try:
             while True:
@@ -319,10 +323,10 @@ class FLV:
         except EndOfTags:
             pass
 
-    def read_tags(self):
+    def read_tags(self) -> None:
         self.tags = list(self.iter_tags())
 
-    def get_next_tag(self):
+    def get_next_tag(self) -> Tag:
         stream = self.stream
 
         try:
@@ -337,14 +341,14 @@ class FLV:
 
         return tag
 
-    def tag_type_to_class(self, tag_type):
+    def tag_type_to_class(self, tag_type: int) -> Type[Union[AudioTag, VideoTag, ScriptAMF3Tag, ScriptTag]]:
         try:
             return tag_to_class[tag_type]
         except KeyError:
             raise MalformedFLV('Invalid tag type: %d' % tag_type)
 
 
-def create_flv_header(has_audio=True, has_video=True):
+def create_flv_header(has_audio: bool = True, has_video: bool = True) -> bytes:
     type_flags = 0
     if has_video:
         type_flags = type_flags | 0x1
@@ -353,7 +357,7 @@ def create_flv_header(has_audio=True, has_video=True):
     return b''.join([b'FLV', make_ui8(1), make_ui8(type_flags), make_ui32(9), make_ui32(0)])
 
 
-def create_flv_tag(tag_type, data, timestamp=0):
+def create_flv_tag(tag_type: int, data: bytes, timestamp: int = 0) -> bytes:
     tag_type = pack('B', tag_type)
     timestamp = make_si32_extended(timestamp)
     stream_id = make_ui24(0)
@@ -364,6 +368,6 @@ def create_flv_tag(tag_type, data, timestamp=0):
     return b''.join([tag_type, make_ui24(data_size), timestamp, stream_id, data, make_ui32(tag_size)])
 
 
-def create_script_tag(name, data, timestamp=0):
+def create_script_tag(name: AnyStr, data: Any, timestamp=0) -> bytes:
     payload = make_ui8(2) + make_script_data_variable(name, data)
     return create_flv_tag(TAG_TYPE_SCRIPT, payload, timestamp)
